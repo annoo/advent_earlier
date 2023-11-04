@@ -71,6 +71,7 @@ def create_readme(day_number: int, day_path: Path, year: int):
     readme_file = day_path / "NOTES.md"
     with open(readme_file, "w") as file:
         file.write(readme_content)
+    return
 
 
 def fetch_data(url: str, headers: dict) -> Optional[httpx.Response]:
