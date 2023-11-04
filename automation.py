@@ -1,5 +1,6 @@
 import shutil
 from pathlib import Path
+from typing import Optional
 
 import click
 import httpx
@@ -48,6 +49,7 @@ def create_folder(year: int, day_number: int):
     add_templates(day_number, day_path)
 
     logger.info(f"Created structure for {year}, Day{day_number} challenge.")
+    return True
 
 
 def add_templates(day_number, day_path):
@@ -71,30 +73,26 @@ def create_readme(day_number: int, day_path: Path, year: int):
         file.write(readme_content)
 
 
-def fetch_data(url: str, headers: dict) -> httpx.Response:
+def fetch_data(url: str, headers: dict) -> Optional[httpx.Response]:
     try:
-        with httpx.AsyncClient() as client:
+        with httpx.Client() as client:
             response = client.get(url, headers=headers)
             response.raise_for_status()
+            logger.info("Fetched data successfully.")
             return response
-    except httpx.HTTPError as e:
-        logger.error(f"An HTTP error occurred: {e}")
-        raise
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 404:
+            logger.error(f"The requested url was not found:: {e.request.url}")
+        else:
+            logger.error(f"HTTP error occured: {e}")
 
 
-async def save_input(day_number: int, year: int, session_cookie: str):
-    url = f"https://adventofcode.com/{year}/day/{day_number}/input"
-    headers = {"cookie": f"session={session_cookie}"}
-
-    response = fetch_data(url, headers)
-    if response.is_success:
-        day_path = Path(f"{year}/day{day_number}")
-        data_file = day_path / "data" / "challenge_input_data.txt"
-        with data_file.open("wb") as file:
-            file.write(response.content)
-        logger.info(f"Downloaded challenge data for Day {day_number}.")
-    else:
-        logger.error(f"Failed to download input data for Day {day_number}.")
+def save_input(day_number: int, year: int, response: httpx.Response):
+    day_path = Path(f"{year}/day{day_number}")
+    data_file = day_path / "data" / "challenge_input_data.txt"
+    with data_file.open("wb") as file:
+        file.write(response.content)
+    logger.info(f"Downloaded challenge data for Day {day_number}.")
 
 
 @click.command()
@@ -105,8 +103,19 @@ def get_puzzle(year, day_number):
         config = load_config()
         session_cookie = config["Credentials"]["session_cookie"]
 
-        if create_folder(year, day_number):
-            save_input(day_number, year, session_cookie)
+        url = f"https://adventofcode.com/{year}/day/{day_number}/input"
+        headers = {"cookie": f"session={session_cookie}"}
+        response = fetch_data(url, headers)
+
+        if response and response.status_code == 200:
+            create_folder(year, day_number)
+            save_input(day_number, year, response)
+        else:
+            logger.error(
+                f"Data could not be fetched for {year}, {day_number}. "
+                "No folder will be created."
+            )
+
     except Exception as e:
         logger.error(f"An unexpected error occurred: {e}")
         raise
